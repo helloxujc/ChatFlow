@@ -87,13 +87,13 @@ public class ChatWebSocketServer extends WebSocketServer {
       if (!errors.isEmpty()) {
         chatResponse.setStatus("ERROR");
         chatResponse.setErrors(errors);
-        webSocket.send(MAPPER.writeValueAsString(chatResponse));
+        safeSend(webSocket, MAPPER.writeValueAsString(chatResponse));
         return;
       }
 
       chatResponse.setStatus("OK");
       chatResponse.setData(msg);
-      webSocket.send(MAPPER.writeValueAsString(chatResponse));
+      safeSend(webSocket, MAPPER.writeValueAsString(chatResponse));
     } catch (Exception e) {
       System.out.println("Deserialization failed: " + e.getClass().getName() + ": " + e.getMessage());
       e.printStackTrace();
@@ -103,7 +103,7 @@ public class ChatWebSocketServer extends WebSocketServer {
       chatResponse.setServerTimestamp(Instant.now().toString());
       chatResponse.setErrors(List.of("Invalid JSON"));
       try {
-        webSocket.send(MAPPER.writeValueAsString(chatResponse));
+        safeSend(webSocket, MAPPER.writeValueAsString(chatResponse));
       } catch (Exception ignored) {
 
       }
@@ -118,5 +118,18 @@ public class ChatWebSocketServer extends WebSocketServer {
   @Override
   public void onStart() {
 
+  }
+
+  private void safeSend(WebSocket conn, String payload) {
+    if (conn == null || !conn.isOpen()) {
+      return;
+    }
+    try {
+      conn.send(payload);
+    } catch (org.java_websocket.exceptions.WebsocketNotConnectedException ignored) {
+      // ignored
+    } catch (Exception ignored) {
+      // ignored
+    }
   }
 }

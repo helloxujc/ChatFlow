@@ -6,6 +6,7 @@ public class ChatMessage {
   private String message;
   private String timestamp;
   private String messageType;
+  private Long seqId;
 
   public ChatMessage() {
   }
@@ -48,5 +49,12 @@ public class ChatMessage {
 
   public void setMessageType(String messageType) {
     this.messageType = messageType;
+  }
+
+  public Long getSeqId() {
+    return seqId;
+  }
+  public void setSeqId(Long seqId) {
+    this.seqId = seqId;
   }
 }
