@@ -8,12 +8,31 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
+/**
+ * Load-testing client that generates and sends a large volume of chat messages to a WebSocket server.
+ *
+ * <p>This client performs:
+ * <ul>
+ *   <li>A probe phase to estimate RTT and predict throughput using Little's Law</li>
+ *   <li>A warmup phase to establish initial connections and send a fixed batch</li>
+ *   <li>A main phase to send the full workload using multiple sender threads and a shared queue</li>
+ * </ul>
+ */
 public final class ChatLoadClient {
 
+  /**
+   * Private constructor to prevent instantiation.
+   */
   private ChatLoadClient() {}
 
+  /**
+   * Runs the RTT probe, warmup, and main load test against the configured server.
+   *
+   * @param args command-line arguments (not used)
+   * @throws Exception if URI parsing, connection, or thread coordination fails
+   */
   public static void main(String[] args) throws Exception {
-    String baseWsUrl = "ws://127.0.0.1:8081/chat/";
+    String baseWsUrl = "ws://ec2-54-213-224-201.us-west-2.compute.amazonaws.com:8081/chat/";
     URI probeUri = new URI(baseWsUrl + "1");
 
     int senderThreadsForMain = 4;
@@ -35,6 +54,11 @@ public final class ChatLoadClient {
     runMainPhaseOnce(baseWsUrl, avgRttMs);
   }
 
+  /**
+   * Prints warmup statistics, including throughput and connection count.
+   *
+   * @param r warmup result
+   */
   private static void printWarmup(WarmupRunner.WarmupResult r) {
     double seconds = Math.max(0.001, r.getDuration().toMillis() / 1000.0);
     double throughput = r.getSuccess() / seconds;
@@ -47,6 +71,14 @@ public final class ChatLoadClient {
     System.out.println("Warmup throughput msg/s: " + throughput);
   }
 
+  /**
+   * Executes the main phase once by generating messages into a queue and sending them using multiple
+   * WebSocket channels in parallel.
+   *
+   * @param baseWsUrl base WebSocket URL for the chat endpoint
+   * @param avgRttMs average RTT in milliseconds measured during the probe phase
+   * @throws Exception if connection setup or thread coordination fails
+   */
   private static void runMainPhaseOnce(String baseWsUrl, double avgRttMs) throws Exception {
     int senderThreads = 4;
     int messagesToSend = ClientConfig.TOTAL_MSG;
@@ -73,13 +105,12 @@ public final class ChatLoadClient {
     ExecutorService senders = Executors.newFixedThreadPool(senderThreads);
     WsSendChannel[] channels = new WsSendChannel[senderThreads];
 
-    URI uri = new URI(baseWsUrl + "1");
-
     for (int i = 0; i < senderThreads; i++) {
-      WsSendChannel channel = new WsSendChannel(uri, metrics);
+      URI uri = new URI(baseWsUrl + (i % 20 + 1));
+      WsSendChannel channel = new WsSendChannel(uri, metrics, success);
       channel.connectBlocking(5, TimeUnit.SECONDS);
       channels[i] = channel;
-      senders.submit(new SenderWorker(queue, poisonPill, channel, success, failed));
+      senders.submit(new SenderWorker(queue, poisonPill, channel, failed));
     }
 
     Instant start = Instant.now();
@@ -95,6 +126,11 @@ public final class ChatLoadClient {
 
     senders.shutdown();
     senders.awaitTermination(10, TimeUnit.MINUTES);
+
+    long deadline = System.currentTimeMillis() + 120_000;
+    while (System.currentTimeMillis() < deadline && success.sum() + failed.sum() < messagesToSend) {
+      Thread.sleep(100);
+    }
 
     for (WsSendChannel c : channels) {
       if (c != null) {

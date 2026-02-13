@@ -5,10 +5,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
-public class WarmupRunner {
+/**
+ * Runs the warmup phase by creating multiple short-lived connections and sending
+ * a fixed number of messages per thread. Success is counted only when ack is received.
+ */
+public final class WarmupRunner {
 
-  public WarmupRunner() {}
+  private WarmupRunner() {}
 
+  /**
+   * Runs warmup load against the given WebSocket base URL.
+   *
+   * @param baseWsUrl base url like "ws://host:8081/chat/"
+   * @return warmup result
+   * @throws InterruptedException if interrupted while waiting for warmup completion
+   */
   public static WarmupResult run(String baseWsUrl) throws InterruptedException {
     int threads = ClientConfig.WARMUP_THREADS;
     int perThread = ClientConfig.WARMUP_MSG_PER_THREAD;
@@ -27,14 +38,20 @@ public class WarmupRunner {
               () -> {
                 WsSendChannel channel = null;
                 try {
-                  URI uri = new URI(baseWsUrl + "1");
-                  channel = new WsSendChannel(uri, metrics);
+                  int roomId = (threadIndex % 20) + 1;
+                  URI uri = URI.create(baseWsUrl + roomId);
+
+                  channel = new WsSendChannel(uri, metrics, success);
                   channel.connectBlocking(5, TimeUnit.SECONDS);
 
                   for (int j = 0; j < perThread; j++) {
                     OutboundMessage msg = WarmupUtil.buildWarmupMessage(threadIndex, j);
                     channel.send(WarmupUtil.toJson(msg));
-                    success.increment();
+                  }
+
+                  long deadline = System.currentTimeMillis() + 10_000;
+                  while (System.currentTimeMillis() < deadline && success.sum() < (long) threads * perThread) {
+                    Thread.sleep(50);
                   }
                 } catch (Exception e) {
                   failed.increment();
@@ -51,6 +68,7 @@ public class WarmupRunner {
 
     done.await();
     Instant end = Instant.now();
+
     return new WarmupResult(
         Duration.between(start, end),
         success.sum(),
@@ -58,12 +76,23 @@ public class WarmupRunner {
         metrics.connectionsCreated().sum());
   }
 
+  /**
+   * Holds aggregated warmup metrics.
+   */
   public static final class WarmupResult {
     private final Duration duration;
     private final long success;
     private final long failed;
     private final long connections;
 
+    /**
+     * Creates a warmup result.
+     *
+     * @param duration total warmup duration
+     * @param success number of acked messages
+     * @param failed number of failed operations
+     * @param connections number of connections created
+     */
     public WarmupResult(Duration duration, long success, long failed, long connections) {
       this.duration = duration;
       this.success = success;
@@ -71,18 +100,38 @@ public class WarmupRunner {
       this.connections = connections;
     }
 
+    /**
+     * Returns total warmup duration.
+     *
+     * @return duration
+     */
     public Duration getDuration() {
       return duration;
     }
 
+    /**
+     * Returns number of successful (acked) messages.
+     *
+     * @return success count
+     */
     public long getSuccess() {
       return success;
     }
 
+    /**
+     * Returns number of failed operations.
+     *
+     * @return failed count
+     */
     public long getFailed() {
       return failed;
     }
 
+    /**
+     * Returns number of connections created.
+     *
+     * @return connections count
+     */
     public long getConnections() {
       return connections;
     }

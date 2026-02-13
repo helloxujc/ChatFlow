@@ -20,6 +20,14 @@ application {
     mainClass = 'chatflow.server.ServerMain'
 }
 
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'chatflow.server.ServerMain'
+        )
+    }
+}
+
 test {
     useJUnitPlatform()
 }

@@ -6,6 +6,15 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 
+/**
+ * Entry point for starting the ChatFlow server.
+ *
+ * <p>This class starts:
+ * <ul>
+ *   <li>An HTTP server on port 8080 exposing a {@code /health} endpoint</li>
+ *   <li>A WebSocket server on port 8081 for chat communication</li>
+ * </ul>
+ */
 public class ServerMain {
   public static void main(String[] args) throws IOException {
     int port = 8080;
