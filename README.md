@@ -3,11 +3,11 @@ A scalable WebSocket-based chat system built for CS6650. The project includes a 
 
 ## Project Structure
 
-ChatFlow/
-├── server/          # WebSocket server (Java-WebSocket + Jackson)
-├── client-part1/    # Basic load testing client (500K messages, throughput metrics)
-├── client-part2/    # Enhanced client with per-message latency tracking & visualization
-└── results/         # Test output: latency.csv, throughput.png, EC2 screenshot
+- ChatFlow/
+- ├── server/          # WebSocket server (Java-WebSocket + Jackson)
+- ├── client-part1/    # Basic load testing client (500K messages, throughput metrics)
+- ├── client-part2/    # Enhanced client with per-message latency tracking & visualization
+- └── results/         # Test output: latency.csv, throughput.png, EC2 screenshot
 
 ## Prerequisites
 - Java 17+
