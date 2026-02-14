@@ -42,7 +42,6 @@ bin/
 .DS_Store
 
 ### Assignment 1 extras ###
-results/
 .env
 .env.*
 *.pem
