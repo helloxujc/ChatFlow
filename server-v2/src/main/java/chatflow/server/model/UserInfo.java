@@ -8,7 +8,7 @@ public class UserInfo {
   private final String roomId;
   private final Instant connectedAt;
 
-  public UserInfo(String userId, String userName, String roomId, Instant connectedAt) {
+  public UserInfo(String userId, String userName, String roomId) {
     this.userId = userId;
     this.userName = userName;
     this.roomId = roomId;

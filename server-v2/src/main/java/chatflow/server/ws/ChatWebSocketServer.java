@@ -2,8 +2,10 @@ package chatflow.server.ws;
 
 import chatflow.server.model.ChatMessage;
 import chatflow.server.model.ChatResponse;
+import chatflow.server.model.UserInfo;
 import chatflow.server.queue.MessagePublisher;
 import chatflow.server.queue.QueueMessage;
+import chatflow.server.room.RoomManager;
 import chatflow.server.validation.MessageValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.InetSocketAddress;
@@ -27,6 +29,7 @@ public class ChatWebSocketServer extends WebSocketServer {
 
   private final MessagePublisher publisher;
   private final String serverId;
+  private final RoomManager roomManager;
 
   /**
    * Creates a chat WebSocket server.
@@ -34,11 +37,14 @@ public class ChatWebSocketServer extends WebSocketServer {
    * @param port the TCP port to bind
    * @param publisher queue publisher
    * @param serverId server identifier
+   * @param roomManager room manager
    */
-  public ChatWebSocketServer(int port, MessagePublisher publisher, String serverId) {
+  public ChatWebSocketServer(int port, MessagePublisher publisher, String serverId,
+      RoomManager roomManager) {
     super(new InetSocketAddress(port));
     this.publisher = Objects.requireNonNull(publisher, "publisher");
     this.serverId = Objects.requireNonNull(serverId, "serverId");
+    this.roomManager = roomManager;
   }
 
   @Override
@@ -52,6 +58,7 @@ public class ChatWebSocketServer extends WebSocketServer {
     }
 
     roomByConn.put(webSocket, roomId);
+    roomManager.addSession(String.valueOf(roomId), webSocket);
     System.out.println("WebSocket opened: roomId=" + roomId + ", path" + path);
   }
 
@@ -92,6 +99,9 @@ public class ChatWebSocketServer extends WebSocketServer {
       chatResponse.setStatus("OK");
       chatResponse.setData(Map.of("messageId", messageId));
       safeSend(webSocket, MAPPER.writeValueAsString(chatResponse));
+
+      UserInfo userInfo = new UserInfo(msg.getUserId(), msg.getUsername(), String.valueOf(roomId));
+      roomManager.registerUser(webSocket, userInfo);
     } catch (Exception e) {
       ChatResponse chatResponse = new ChatResponse();
       chatResponse.setStatus("ERROR");
@@ -102,6 +112,22 @@ public class ChatWebSocketServer extends WebSocketServer {
       } catch (Exception ignored) {
       }
     }
+  }
+
+  @Override
+  public void onClose(WebSocket webSocket, int code, String reason, boolean remote) {
+    Integer roomId = roomByConn.remove(webSocket);
+    if (roomId != null) {
+      roomManager.removeSession(String.valueOf(roomId), webSocket);
+    }
+  }
+
+  @Override
+  public void onError(WebSocket webSocket, Exception e) {
+  }
+
+  @Override
+  public void onStart() {
   }
 
   private static int parseRoomID(String path) {

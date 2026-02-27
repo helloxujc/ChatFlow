@@ -3,6 +3,7 @@ package chatflow.server;
 import chatflow.server.queue.MessagePublisher;
 import chatflow.server.queue.rabbit.ChannelPool;
 import chatflow.server.queue.rabbit.RabbitMqPublisher;
+import chatflow.server.room.RoomManager;
 import chatflow.server.ws.ChatWebSocketServer;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -40,7 +41,8 @@ public class ServerMain {
       MessagePublisher publisher =
           new RabbitMqPublisher(pool, System.getenv().getOrDefault("RABBIT_EXCHANGE", "chat.exchange"));
 
-      ChatWebSocketServer wsServer = new ChatWebSocketServer(8081, publisher, serverId);
+      RoomManager roomManager = new RoomManager();
+      ChatWebSocketServer wsServer = new ChatWebSocketServer(8081, publisher, serverId, roomManager);
       wsServer.start();
       System.out.println("WebSocket bind address: " + wsServer.getAddress());
       System.out.println("WebSocket started on port 8081");

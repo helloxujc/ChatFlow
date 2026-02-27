@@ -17,8 +17,11 @@ public class RoomManager {
 
   public final AtomicLong messagesProcessed = new AtomicLong(0);
 
-  public void addSession(String roomId, WebSocket ws, UserInfo userInfo) {
+  public void addSession(String roomId, WebSocket ws) {
     roomSessions.computeIfAbsent(roomId, k -> new CopyOnWriteArraySet<>()).add(ws);
+  }
+
+  public void registerUser(WebSocket ws, UserInfo userInfo) {
     activeUsers.put(userInfo.getUserId(), userInfo);
     sessionUserMap.put(ws, userInfo);
   }
