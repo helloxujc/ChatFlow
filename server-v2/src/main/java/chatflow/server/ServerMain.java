@@ -1,5 +1,7 @@
 package chatflow.server;
 
+import chatflow.server.broadcast.BroadcastHandler;
+import chatflow.server.broadcast.MessageIdCache;
 import chatflow.server.queue.MessagePublisher;
 import chatflow.server.queue.rabbit.ChannelPool;
 import chatflow.server.queue.rabbit.RabbitMqPublisher;
@@ -9,6 +11,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Entry point for starting the ChatFlow server.
@@ -16,6 +20,12 @@ import java.net.InetSocketAddress;
 public class ServerMain {
   public static void main(String[] args) throws IOException {
     int port = 8080;
+
+    RoomManager roomManager = new RoomManager();
+    MessageIdCache messageIdCache = new MessageIdCache();
+    ExecutorService broadcastExecutor = Executors.newFixedThreadPool(Integer.parseInt
+        (System.getenv().getOrDefault("BROADCAST_THREADS", "8")));
+    BroadcastHandler broadcastHandler = new BroadcastHandler(roomManager, messageIdCache, broadcastExecutor);
 
     HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
     server.createContext("/health",
@@ -26,6 +36,7 @@ public class ServerMain {
             os.write(response.getBytes());
           }
         });
+    server.createContext("/internal/broadcast", broadcastHandler);
 
     String serverId = System.getenv().getOrDefault("CHATFLOW_SERVER_ID", "server-1");
 
@@ -41,7 +52,6 @@ public class ServerMain {
       MessagePublisher publisher =
           new RabbitMqPublisher(pool, System.getenv().getOrDefault("RABBIT_EXCHANGE", "chat.exchange"));
 
-      RoomManager roomManager = new RoomManager();
       ChatWebSocketServer wsServer = new ChatWebSocketServer(8081, publisher, serverId, roomManager);
       wsServer.start();
       System.out.println("WebSocket bind address: " + wsServer.getAddress());
