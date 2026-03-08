@@ -36,6 +36,9 @@ public final class ClientConfig {
   /** Capacity of the outbound message blocking queue. */
   public static final int QUEUE_CAPACITY = 20_000;
 
+  /** Delay in milliseconds between consecutive message sends per thread. */
+  public static final long SEND_DELAY_MS = 15L;
+
   /**
    * Default constructor.
    */

@@ -24,8 +24,9 @@ public class ConsumerMain {
     public static void main(String[] args) throws IOException, TimeoutException {
 
         ConsumerConfig config = ConsumerConfig.get();
+        int stripeCount = args.length > 0 ? Integer.parseInt(args[0]) : config.stripeCount;
         BroadcastClient client = new BroadcastClient(config);
-        StripedExecutor stripedExecutor = new StripedExecutor(config.stripeCount);
+        StripedExecutor stripedExecutor = new StripedExecutor(stripeCount);
         RoomDispatcher roomDispatcher = new RoomDispatcher(stripedExecutor, client);
 
         ConnectionFactory factory = new ConnectionFactory();
@@ -41,6 +42,7 @@ public class ConsumerMain {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             consumerPool.shutdown();
             stripedExecutor.shutdown();
+            client.shutdown();
         }));
 
         System.out.println("Consumer service started");

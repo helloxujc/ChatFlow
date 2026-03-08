@@ -11,6 +11,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Manages a pool of {@link RabbitConsumer} threads, one per room queue, sharing a single RabbitMQ connection.
+ */
 public class ConsumerPool {
 
   private final Connection connection;
@@ -25,6 +28,9 @@ public class ConsumerPool {
     this.config = config;
   }
 
+  /**
+   * Creates one {@link RabbitConsumer} per configured room and submits each to the thread pool.
+   */
   public void start() {
     pool = Executors.newFixedThreadPool(config.totalRooms);
     for ( int i = 1; i <= config.totalRooms; i++ ) {
@@ -41,6 +47,9 @@ public class ConsumerPool {
     }
   }
 
+  /**
+   * Signals all consumers to stop, shuts down the thread pool, and closes the RabbitMQ connection.
+   */
   public void shutdown() {
     consumers.forEach(consumer -> consumer.running = false);
     pool.shutdown();

@@ -4,10 +4,15 @@ import chatflow.consumer.room.RoomDispatcher;
 import com.rabbitmq.client.Channel;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * Consumes messages from a single room queue and dispatches each delivery to the {@link chatflow.consumer.room.RoomDispatcher} for processing.
+ */
 public class RabbitConsumer implements Runnable {
 
   private final Channel channel;
@@ -33,7 +38,10 @@ public class RabbitConsumer implements Runnable {
   public void run() {
     try {
       channel.basicQos(prefetchCount);
-      channel.queueDeclare(queueName, true, false, false, null);
+      Map<String, Object> queueArgs = new HashMap<>();
+      queueArgs.put("x-message-ttl", 60_000);   // drop messages older than 60s
+      queueArgs.put("x-max-length", 10_000);     // max 10k messages per queue
+      channel.queueDeclare(queueName, true, false, false, queueArgs);
       channel.queueBind(queueName, exchange, "room." + roomId);
     } catch (IOException e) {
       throw new RuntimeException(e);

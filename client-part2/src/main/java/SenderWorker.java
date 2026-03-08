@@ -1,105 +1,129 @@
-import java.util.Objects;
-import java.util.concurrent.BlockingQueue;
+import java.net.URI;
+import java.time.Instant;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
- * Consumes outbound messages from a shared queue and sends them over WebSocket.
- *
- * <p>This worker selects the appropriate pooled WebSocket channel based on the
- * message room id, ensuring messages are routed to /chat/{roomId} endpoints.
+ * Simulates a single user: owns one WebSocket connection per room session,
+ * sends JOIN -> TEXT x N -> LEAVE, then switches to the next room.
  */
 public final class SenderWorker implements Runnable {
 
-  private final BlockingQueue<OutboundMessage> queue;
-  private final OutboundMessage poisonPill;
-  private final RoomChannelPool pool;
+  private final int userId;
+  private final int totalMessages;
+  private final long startDelayMs;
+  private final String chatPrefix;
+  private final AtomicLong seqCounter;
   private final LongAdder successCount;
   private final LongAdder failureCount;
   private final Part3Collector collector;
+  private final Metrics metrics;
+  private final String[] messagePool;
 
-  /**
-   * Creates a sender worker without a Part 3 collector.
-   *
-   * @param queue shared outbound message queue
-   * @param poisonPill sentinel message indicating termination
-   * @param pool room-based channel pool
-   * @param successCount counter for successful sends
-   * @param failureCount counter for failed sends
-   */
   public SenderWorker(
-      BlockingQueue<OutboundMessage> queue,
-      OutboundMessage poisonPill,
-      RoomChannelPool pool,
-      LongAdder successCount,
-      LongAdder failureCount) {
-    this(queue, poisonPill, pool, successCount, failureCount, null);
-  }
-
-  /**
-   * Creates a sender worker.
-   *
-   * @param queue shared outbound message queue
-   * @param poisonPill sentinel message indicating termination
-   * @param pool room-based channel pool
-   * @param successCount counter for successful sends
-   * @param failureCount counter for failed sends
-   * @param collector optional Part 3 collector
-   */
-  public SenderWorker(
-      BlockingQueue<OutboundMessage> queue,
-      OutboundMessage poisonPill,
-      RoomChannelPool pool,
+      int userId,
+      int totalMessages,
+      long startDelayMs,
+      String chatPrefix,
+      AtomicLong seqCounter,
       LongAdder successCount,
       LongAdder failureCount,
-      Part3Collector collector) {
-    this.queue = Objects.requireNonNull(queue, "queue");
-    this.poisonPill = Objects.requireNonNull(poisonPill, "poisonPill");
-    this.pool = Objects.requireNonNull(pool, "pool");
-    this.successCount = Objects.requireNonNull(successCount, "successCount");
-    this.failureCount = Objects.requireNonNull(failureCount, "failureCount");
+      Part3Collector collector,
+      Metrics metrics,
+      String[] messagePool) {
+    this.userId = userId;
+    this.totalMessages = totalMessages;
+    this.startDelayMs = startDelayMs;
+    this.chatPrefix = chatPrefix;
+    this.seqCounter = seqCounter;
+    this.successCount = successCount;
+    this.failureCount = failureCount;
     this.collector = collector;
+    this.metrics = metrics;
+    this.messagePool = messagePool;
   }
 
-  /** Runs the send loop until a poison pill is received or the thread is interrupted. */
   @Override
   public void run() {
+    if (startDelayMs > 0) {
+      try { Thread.sleep(startDelayMs); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+    }
+    ThreadLocalRandom rng = ThreadLocalRandom.current();
+    int roomId = rng.nextInt(1, ClientConfig.ROOM_ID_MAX + 1);
+    URI uri = URI.create(chatPrefix + roomId);
+    WsSendChannel channel = new WsSendChannel(uri, metrics,
+        collector != null ? collector::onAck : null);
+
     try {
-      while (true) {
-        OutboundMessage msg = queue.take();
-        if (msg == poisonPill || msg.getSeqId() == poisonPill.getSeqId()) {
-          break;
-        }
-        sendWithRetry(msg);
+      channel.connectBlocking(10, TimeUnit.SECONDS);
+
+      // JOIN once at start
+      sendOne(channel, MessageType.JOIN, roomId);
+
+      // TEXT for all remaining messages except last
+      for (int sent = 1; sent < totalMessages - 1; sent++) {
+        sendOne(channel, MessageType.TEXT, roomId);
       }
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+
+      // LEAVE at end
+      if (totalMessages > 1) {
+        sendOne(channel, MessageType.LEAVE, roomId);
+      }
+
+      // wait for server to process and ACK all messages (up to 5 min)
+      waitForAcks(300_000);
+
+    } catch (Exception e) {
+      failureCount.add(totalMessages);
+    } finally {
+      channel.closeSilently();
     }
   }
 
-  private void sendWithRetry(OutboundMessage msg) {
-    OutboundMessage current = msg;
+  private void sendOne(WsSendChannel channel, MessageType type, int roomId) {
+    long seqId = seqCounter.getAndIncrement();
+    String text = messagePool[ThreadLocalRandom.current().nextInt(messagePool.length)];
+    OutboundMessage msg = new OutboundMessage(
+        seqId, userId, "user" + userId, text, roomId, type, Instant.now());
 
-    while (true) {
-      int attempt = current.getAttempt();
-      if (attempt >= ClientConfig.MAX_SEND_ATTEMPTS) {
-        failureCount.increment();
-        return;
-      }
-
+    for (int attempt = 0; attempt < ClientConfig.MAX_SEND_ATTEMPTS; attempt++) {
       try {
-        SendChannel channel = pool.channel(current.getRoomId());
-        ensureOpen(channel);
-        if (collector != null) {
-          collector.onSend(current);
+        if (!channel.isOpen()) {
+          channel.reconnect();
         }
-        channel.send(toJson(current));
+        if (collector != null) {
+          collector.onSend(msg);
+        }
+        channel.send(toJson(msg));
         successCount.increment();
-        TimeUnit.MICROSECONDS.sleep(500);
+        if (ClientConfig.SEND_DELAY_MS > 0) {
+          TimeUnit.MILLISECONDS.sleep(ClientConfig.SEND_DELAY_MS);
+        }
+        return;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
         return;
       } catch (Exception e) {
-        current = current.nextAttempt();
-        backoffSleep(current.getAttempt());
+        if (attempt < ClientConfig.MAX_SEND_ATTEMPTS - 1) {
+          backoffSleep(attempt + 1);
+        }
+      }
+    }
+    failureCount.increment();
+  }
+
+  private void waitForAcks(long maxMs) {
+    if (collector == null) return;
+    long deadline = System.currentTimeMillis() + maxMs;
+    while (System.currentTimeMillis() < deadline) {
+      if (collector.inflightCount() == 0) return;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return;
       }
     }
   }
@@ -114,12 +138,6 @@ public final class SenderWorker implements Runnable {
     }
   }
 
-  private void ensureOpen(SendChannel channel) throws Exception {
-    if (!channel.isOpen()) {
-      channel.reconnect();
-    }
-  }
-
   private String toJson(OutboundMessage msg) {
     String msgWithSeq = "seq:" + msg.getSeqId() + "|" + msg.getMessage();
     return "{"
@@ -131,8 +149,7 @@ public final class SenderWorker implements Runnable {
         + "}";
   }
 
-  private String escape(String msg) {
-    return msg.replace("\\", "\\\\").replace("\"", "\\\"");
+  private String escape(String s) {
+    return s.replace("\\", "\\\\").replace("\"", "\\\"");
   }
 }
-

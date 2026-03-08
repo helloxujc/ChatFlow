@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
@@ -26,6 +27,7 @@ public class ChatWebSocketServer extends WebSocketServer {
 
   private final Map<WebSocket, Integer> roomByConn = new ConcurrentHashMap<>();
   private static final ObjectMapper MAPPER = new ObjectMapper();
+  private final AtomicInteger activeConnections = new AtomicInteger(0);
 
   private final MessagePublisher publisher;
   private final String serverId;
@@ -59,7 +61,8 @@ public class ChatWebSocketServer extends WebSocketServer {
 
     roomByConn.put(webSocket, roomId);
     roomManager.addSession(String.valueOf(roomId), webSocket);
-    System.out.println("WebSocket opened: roomId=" + roomId + ", path" + path);
+    int conns = activeConnections.incrementAndGet();
+    System.out.println("[" + serverId + "] onOpen: roomId=" + roomId + ", activeConnections=" + conns);
   }
 
   @Override
@@ -97,7 +100,7 @@ public class ChatWebSocketServer extends WebSocketServer {
       publisher.publish(qm);
 
       chatResponse.setStatus("OK");
-      chatResponse.setData(Map.of("messageId", messageId));
+      chatResponse.setData(Map.of("messageId", messageId, "message", msg.getMessage()));
       safeSend(webSocket, MAPPER.writeValueAsString(chatResponse));
 
       UserInfo userInfo = new UserInfo(msg.getUserId(), msg.getUsername(), String.valueOf(roomId));
@@ -120,10 +123,13 @@ public class ChatWebSocketServer extends WebSocketServer {
     if (roomId != null) {
       roomManager.removeSession(String.valueOf(roomId), webSocket);
     }
+    int conns = activeConnections.decrementAndGet();
+    System.out.println("[" + serverId + "] onClose: activeConnections=" + conns);
   }
 
   @Override
   public void onError(WebSocket webSocket, Exception e) {
+    System.err.println("[WS ERROR] " + (webSocket != null ? webSocket.getRemoteSocketAddress() : "null") + " - " + e.getMessage());
   }
 
   @Override

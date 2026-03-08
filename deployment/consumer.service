@@ -1,0 +1,20 @@
+[Unit]
+Description=ChatFlow Consumer Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+Environment="RABBIT_HOST=172.31.21.132"
+Environment="RABBIT_USER=chatflow"
+Environment="RABBIT_PASS=chatflow123"
+Environment="SERVER_URLS=http://172.31.27.59:8082,http://172.31.30.111:8082,http://172.31.30.43:8082,http://172.31.27.211:8082"
+ExecStart=/usr/bin/java -jar /home/ubuntu/consumer.jar 20
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/ubuntu/consumer.log
+StandardError=append:/home/ubuntu/consumer.log
+
+[Install]
+WantedBy=multi-user.target

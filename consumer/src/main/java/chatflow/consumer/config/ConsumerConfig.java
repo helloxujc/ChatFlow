@@ -1,5 +1,8 @@
 package chatflow.consumer.config;
 
+/**
+ * Singleton that loads all consumer configuration values from environment variables with defaults.
+ */
 public class ConsumerConfig {
 
   public final String rabbitHost;
@@ -35,6 +38,11 @@ public class ConsumerConfig {
     return (value != null && !value.isBlank()) ? value : defaultValue;
   }
 
+  /**
+   * Returns the singleton instance of the configuration.
+   *
+   * @return the global {@code ConsumerConfig} instance
+   */
   public static ConsumerConfig get() {
     return INSTANCE;
   }

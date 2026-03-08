@@ -1,5 +1,8 @@
 package chatflow.consumer.model;
 
+/**
+ * Represents a chat message payload sent from the consumer to the server for broadcasting to room members.
+ */
 public class BroadcastRequest {
 
   private String messageId;

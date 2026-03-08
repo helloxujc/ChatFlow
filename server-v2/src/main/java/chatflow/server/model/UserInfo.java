@@ -2,6 +2,9 @@ package chatflow.server.model;
 
 import java.time.Instant;
 
+/**
+ * Holds identifying and connection metadata for a currently connected WebSocket user.
+ */
 public class UserInfo {
   private final String userId;
   private final String userName;

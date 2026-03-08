@@ -2,6 +2,9 @@ package chatflow.consumer.pool;
 
 import com.rabbitmq.client.Delivery;
 
+/**
+ * Bundles a RabbitMQ delivery with its corresponding ack and nack callbacks for deferred acknowledgement.
+ */
 public class DeliveryTask {
 
   public final Delivery delivery;

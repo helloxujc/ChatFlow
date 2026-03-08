@@ -1,5 +1,8 @@
 package chatflow.server.broadcast;
 
+/**
+ * Represents the JSON payload received by the server's internal broadcast endpoint from the consumer service.
+ */
 public class BroadcastRequest {
 
   private String messageId;

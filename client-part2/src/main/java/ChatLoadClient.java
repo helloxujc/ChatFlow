@@ -1,13 +1,11 @@
 import java.net.URI;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 /**
@@ -35,12 +33,12 @@ public final class ChatLoadClient {
    * @throws Exception if any networking or coordination step fails
    */
   public static void main(String[] args) throws Exception {
-    String serverBase = "ws://ec2-54-213-224-201.us-west-2.compute.amazonaws.com:8081";
+    String serverBase = "ws://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com";
     String chatPrefix = serverBase + "/chat/";
 
     URI probeUri = new URI(chatPrefix + "1");
 
-    int senderThreadsForMain = 4;
+    int senderThreadsForMain = args.length > 0 ? Integer.parseInt(args[0]) : 4;
     int pipelineDepthPerConnection = 1;
 
     double avgRttMs = RttProbe.measureAverageRttMs(probeUri, 200);
@@ -56,7 +54,7 @@ public final class ChatLoadClient {
     WarmupRunner.WarmupResult warmup = WarmupRunner.run(chatPrefix);
     printWarmup(warmup);
 
-    runMainPhaseOnce(new URI(serverBase), avgRttMs);
+    runMainPhaseOnce(new URI(serverBase), avgRttMs, senderThreadsForMain);
   }
 
   /**
@@ -83,64 +81,41 @@ public final class ChatLoadClient {
    * @param avgRttMs average RTT measured during the probe phase
    * @throws Exception if connection setup, sending, or output generation fails
    */
-  private static void runMainPhaseOnce(URI serverBaseUri, double avgRttMs) throws Exception {
-    int senderThreads = 4;
+  private static void runMainPhaseOnce(URI serverBaseUri, double avgRttMs, int senderThreads)
+      throws Exception {
     int messagesToSend = ClientConfig.TOTAL_MSG;
+    int base = messagesToSend / senderThreads;
+    int remainder = messagesToSend % senderThreads;
 
     Metrics metrics = new Metrics();
     Part3Collector collector = new Part3Collector();
     LongAdder success = metrics.success();
     LongAdder failed = metrics.failed();
+    AtomicLong seqCounter = new AtomicLong(0);
 
-    BlockingQueue<OutboundMessage> queue = new ArrayBlockingQueue<>(ClientConfig.QUEUE_CAPACITY);
-
-    String[] pool = MessageGenerator.defaultMessagePool();
-
-    OutboundMessage poisonPill =
-        new OutboundMessage(-1L, 1, "poison", "poison", 1, MessageType.TEXT, Instant.EPOCH);
-
-    ExecutorService senders = Executors.newFixedThreadPool(senderThreads);
-
-    String chatPrefix = serverBaseUri.toString() + "/chat/";
-    RoomChannelPool channelPool = new RoomChannelPool(chatPrefix, metrics, collector::onAck);
-
-    for (int roomId = 1; roomId <= 20; roomId++) {
-      WsSendChannel ch = channelPool.channel(roomId);
+    String[] pool = new String[ClientConfig.MSG_POOL_SIZE];
+    for (int i = 0; i < pool.length; i++) {
+      pool[i] = "Message-" + (i + 1);
     }
 
+    String chatPrefix = serverBaseUri.toString() + "/chat/";
+    ExecutorService senders = Executors.newFixedThreadPool(senderThreads);
+
     for (int i = 0; i < senderThreads; i++) {
-      senders.submit(new SenderWorker(queue, poisonPill, channelPool, success, failed, collector));
+      int msgsForThread = base + (i < remainder ? 1 : 0);
+      long delayMs = (long) i * 2000L / senderThreads; // spread over 2 seconds
+      senders.submit(new SenderWorker(
+          i + 1, msgsForThread, delayMs, chatPrefix, seqCounter,
+          success, failed, collector, metrics, pool));
     }
 
     Instant start = Instant.now();
-
-    Thread generator =
-        new Thread(
-            new MessageGenerator(queue, messagesToSend, senderThreads, poisonPill, pool),
-            "message-generator");
-
     metrics.start();
-    generator.start();
-    generator.join();
 
     senders.shutdown();
     senders.awaitTermination(10, TimeUnit.MINUTES);
 
-    awaitLateAcks(collector, 120_000);
-
-    for (int roomId = 1; roomId <= 20; roomId++) {
-      try {
-        channelPool.channel(roomId).closeSilently();
-      } catch (Exception ignored) {
-        // Best-effort close.
-      }
-    }
-
     metrics.stop();
-
-    Duration dur = Duration.between(start, Instant.now());
-    double seconds = Math.max(0.001, dur.toMillis() / 1000.0);
-    double throughput = success.sum() / seconds;
 
     System.out.println("=== MAIN ===");
     System.out.println("Successful messages sent: " + metrics.success().sum());
@@ -177,21 +152,5 @@ public final class ChatLoadClient {
     System.out.println("Wrote results/throughput.png");
   }
 
-  /**
-   * Waits for in-flight messages to drain before closing channels.
-   *
-   * @param collector part 3 collector tracking in-flight messages
-   * @param timeoutMs max wait time in milliseconds
-   * @throws InterruptedException if interrupted
-   */
-  private static void awaitLateAcks(Part3Collector collector, long timeoutMs)
-      throws InterruptedException {
-    long deadline = System.currentTimeMillis() + timeoutMs;
-    while (System.currentTimeMillis() < deadline) {
-      if (collector.inflightCount() == 0) {
-        return;
-      }
-      Thread.sleep(50);
-    }
-  }
 }
+
