@@ -1,4 +1,9 @@
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -33,8 +38,9 @@ public final class ChatLoadClient {
    * @throws Exception if any networking or coordination step fails
    */
   public static void main(String[] args) throws Exception {
-    String serverBase = "ws://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com";
-    String chatPrefix = serverBase + "/chat/";
+    String serverBase    = "ws://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com";
+    String metricsUrl    = "http://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com:8080/metrics";
+    String chatPrefix    = serverBase + "/chat/";
 
     URI probeUri = new URI(chatPrefix + "1");
 
@@ -54,7 +60,7 @@ public final class ChatLoadClient {
     WarmupRunner.WarmupResult warmup = WarmupRunner.run(chatPrefix);
     printWarmup(warmup);
 
-    runMainPhaseOnce(new URI(serverBase), avgRttMs, senderThreadsForMain);
+    runMainPhaseOnce(new URI(serverBase), metricsUrl, avgRttMs, senderThreadsForMain);
   }
 
   /**
@@ -81,8 +87,8 @@ public final class ChatLoadClient {
    * @param avgRttMs average RTT measured during the probe phase
    * @throws Exception if connection setup, sending, or output generation fails
    */
-  private static void runMainPhaseOnce(URI serverBaseUri, double avgRttMs, int senderThreads)
-      throws Exception {
+  private static void runMainPhaseOnce(URI serverBaseUri, String metricsUrl,
+                                        double avgRttMs, int senderThreads) throws Exception {
     int messagesToSend = ClientConfig.TOTAL_MSG;
     int base = messagesToSend / senderThreads;
     int remainder = messagesToSend % senderThreads;
@@ -150,6 +156,32 @@ public final class ChatLoadClient {
     var series = ThroughputTracker.computeMessagesPerSecond(collector.snapshot());
     ChartGenerator.writeThroughputChart(Path.of("..", "results", "throughput.png"), series);
     System.out.println("Wrote results/throughput.png");
+
+    System.out.println("\n=== METRICS REPORT ===");
+    String metricsJson = fetchMetrics(metricsUrl);
+    System.out.println(metricsJson);
+    Path metricsFile = Path.of("..", "results", "metrics_result.json");
+    Files.writeString(metricsFile, metricsJson);
+    System.out.println("Wrote results/metrics_result.json");
+  }
+
+  /**
+   * Fetches the metrics JSON from the server's /metrics endpoint.
+   * Returns an error string instead of throwing if the request fails.
+   */
+  private static String fetchMetrics(String metricsUrl) {
+    try {
+      HttpURLConnection conn = (HttpURLConnection) new URL(metricsUrl).openConnection();
+      conn.setRequestMethod("GET");
+      conn.setConnectTimeout(5_000);
+      conn.setReadTimeout(10_000);
+
+      int code = conn.getResponseCode();
+      InputStream stream = (code == 200) ? conn.getInputStream() : conn.getErrorStream();
+      return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      return "{\"error\": \"Failed to fetch metrics: " + e.getMessage() + "\"}";
+    }
   }
 
 }

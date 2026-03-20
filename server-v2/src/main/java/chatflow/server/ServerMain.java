@@ -2,6 +2,8 @@ package chatflow.server;
 
 import chatflow.server.broadcast.BroadcastHandler;
 import chatflow.server.broadcast.MessageIdCache;
+import chatflow.server.metrics.MetricsHandler;
+import chatflow.server.metrics.MetricsRepository;
 import chatflow.server.queue.MessagePublisher;
 import chatflow.server.queue.rabbit.ChannelPool;
 import chatflow.server.queue.rabbit.RabbitMqPublisher;
@@ -27,8 +29,11 @@ public class ServerMain {
     BroadcastHandler broadcastHandler = new BroadcastHandler(roomManager, messageIdCache);
 
     // Dedicated health server — never blocked by broadcast load
+    MetricsRepository metricsRepository = new MetricsRepository();
+    MetricsHandler metricsHandler = new MetricsHandler(metricsRepository);
+
     HttpServer healthServer = HttpServer.create(new InetSocketAddress(port), 16);
-    healthServer.setExecutor(Executors.newFixedThreadPool(2));
+    healthServer.setExecutor(Executors.newFixedThreadPool(4));
     healthServer.createContext("/health",
         exchange -> {
           String response = "OK";
@@ -37,6 +42,7 @@ public class ServerMain {
             os.write(response.getBytes());
           }
         });
+    healthServer.createContext("/metrics", metricsHandler);
     healthServer.start();
     System.out.println("Health server started on port " + port);
 
