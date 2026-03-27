@@ -69,6 +69,7 @@ public class ConsumerMain {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+            dbWriter.printLatencyStats();
 
             // 3. Close DB connection pool
             dbPool.close();

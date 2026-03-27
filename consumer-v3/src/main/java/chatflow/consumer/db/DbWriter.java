@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +37,9 @@ public class DbWriter implements Runnable {
 
   // Backoff delays in ms for retry attempts 1, 2, 3
   private static final long[] BACKOFF_MS = {100, 300, 1000};
+
+  // Latency tracking: collect each successful batch write duration in ms
+  private final List<Long> batchLatenciesMs = Collections.synchronizedList(new ArrayList<>());
 
   private volatile boolean running = true;
 
@@ -97,7 +101,9 @@ public class DbWriter implements Runnable {
 
     for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
       try {
+        long t0 = System.currentTimeMillis();
         repo.persistBatch(batch);
+        batchLatenciesMs.add(System.currentTimeMillis() - t0);
         circuitBreaker.onSuccess();
         return; // success — done
       } catch (SQLException e) {
@@ -145,6 +151,24 @@ public class DbWriter implements Runnable {
    */
   public void stop() {
     running = false;
+  }
+
+  public void printLatencyStats() {
+    List<Long> sorted = new ArrayList<>(batchLatenciesMs);
+    if (sorted.isEmpty()) {
+      System.out.println("[DbWriter] No batch latency data.");
+      return;
+    }
+    Collections.sort(sorted);
+    int n = sorted.size();
+    long p50 = sorted.get((int)(n * 0.50));
+    long p95 = sorted.get((int)(n * 0.95));
+    long p99 = sorted.get((int)(n * 0.99));
+    long min = sorted.get(0);
+    long max = sorted.get(n - 1);
+    long sum = sorted.stream().mapToLong(Long::longValue).sum();
+    System.out.printf("[DbWriter] Batch write latency — batches=%d  min=%dms  p50=%dms  p95=%dms  p99=%dms  max=%dms  avg=%.1fms%n",
+        n, min, p50, p95, p99, max, (double) sum / n);
   }
 
   public int getDeadLetterCount() {

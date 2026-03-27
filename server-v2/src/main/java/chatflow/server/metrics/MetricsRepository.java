@@ -152,6 +152,88 @@ public class MetricsRepository {
     return result;
   }
 
+  // DB Stats: buffer hit ratio, active connections, inserts, disk I/O
+  public Map<String, Object> getDbStats() throws SQLException {
+    Map<String, Object> stats = new LinkedHashMap<>();
+
+    // Write throughput from messages table
+    String throughputSql =
+        "SELECT COUNT(*) as total_rows," +
+        " EXTRACT(EPOCH FROM (MAX(client_timestamp) - MIN(client_timestamp))) as duration_sec," +
+        " ROUND(COUNT(*) / NULLIF(EXTRACT(EPOCH FROM (MAX(client_timestamp) - MIN(client_timestamp))), 0), 1) as avg_rows_per_sec" +
+        " FROM messages WHERE client_timestamp >= NOW() - INTERVAL '2 hours'";
+    try (Connection c = dataSource.getConnection();
+         PreparedStatement ps = c.prepareStatement(throughputSql);
+         ResultSet rs = ps.executeQuery()) {
+      if (rs.next()) {
+        stats.put("totalMessages",           rs.getLong("total_rows"));
+        stats.put("testDurationSec",         rs.getLong("duration_sec"));
+        stats.put("avgWriteThroughputPerSec", rs.getDouble("avg_rows_per_sec"));
+      }
+    }
+
+    // Buffer hit ratio + total inserts (pg_stat_database)
+    String dbSql = "SELECT blks_hit, blks_read, tup_inserted, xact_commit, xact_rollback" +
+                   " FROM pg_stat_database WHERE datname = 'chatflow'";
+    try (Connection c = dataSource.getConnection();
+         PreparedStatement ps = c.prepareStatement(dbSql);
+         ResultSet rs = ps.executeQuery()) {
+      if (rs.next()) {
+        long hit  = rs.getLong("blks_hit");
+        long read = rs.getLong("blks_read");
+        double ratio = (hit + read) == 0 ? 0 :
+            Math.round(hit * 10000.0 / (hit + read)) / 100.0;
+        stats.put("bufferHitRatioPct", ratio);
+        stats.put("totalInsertsAllTime", rs.getLong("tup_inserted"));
+        stats.put("xactCommit", rs.getLong("xact_commit"));
+        stats.put("xactRollback", rs.getLong("xact_rollback"));
+      }
+    }
+
+    // Lock waits
+    String lockSql = "SELECT count(*) FROM pg_locks WHERE NOT granted";
+    try (Connection c = dataSource.getConnection();
+         PreparedStatement ps = c.prepareStatement(lockSql);
+         ResultSet rs = ps.executeQuery()) {
+      if (rs.next()) stats.put("currentLockWaits", rs.getLong(1));
+    }
+
+    // Table-level I/O (messages table)
+    String tblSql = "SELECT heap_blks_read, heap_blks_hit," +
+                    " idx_blks_read, idx_blks_hit" +
+                    " FROM pg_statio_user_tables WHERE relname = 'messages'";
+    try (Connection c = dataSource.getConnection();
+         PreparedStatement ps = c.prepareStatement(tblSql);
+         ResultSet rs = ps.executeQuery()) {
+      if (rs.next()) {
+        long th = rs.getLong("heap_blks_hit");
+        long tr = rs.getLong("heap_blks_read");
+        long ih = rs.getLong("idx_blks_hit");
+        long ir = rs.getLong("idx_blks_read");
+        stats.put("messagesHeapBlksHit",  th);
+        stats.put("messagesHeapBlksRead", tr);
+        stats.put("messagesIdxBlksHit",   ih);
+        stats.put("messagesIdxBlksRead",  ir);
+      }
+    }
+
+    // BGWriter disk I/O
+    String bgSql = "SELECT buffers_checkpoint, buffers_clean," +
+                   " buffers_backend, buffers_alloc FROM pg_stat_bgwriter";
+    try (Connection c = dataSource.getConnection();
+         PreparedStatement ps = c.prepareStatement(bgSql);
+         ResultSet rs = ps.executeQuery()) {
+      if (rs.next()) {
+        stats.put("diskBuffersCheckpoint", rs.getLong("buffers_checkpoint"));
+        stats.put("diskBuffersClean",      rs.getLong("buffers_clean"));
+        stats.put("diskBuffersBackend",    rs.getLong("buffers_backend"));
+        stats.put("diskBuffersAlloc",      rs.getLong("buffers_alloc"));
+      }
+    }
+
+    return stats;
+  }
+
   public void close() {
     dataSource.close();
   }

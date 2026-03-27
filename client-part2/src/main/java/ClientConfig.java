@@ -7,7 +7,7 @@
 public final class ClientConfig {
 
   /** Total number of messages to send during the main phase. */
-  public static final int TOTAL_MSG = 500_000;
+  public static final int TOTAL_MSG = 2_200_000;
 
   /** Number of threads used in the warmup phase. */
   public static final int WARMUP_THREADS = 32;
@@ -38,6 +38,9 @@ public final class ClientConfig {
 
   /** Delay in milliseconds between consecutive message sends per thread. */
   public static final long SEND_DELAY_MS = 15L;
+
+  /** Number of sender threads used in the main phase. */
+  public static final int MAIN_SENDER_THREADS = 32;
 
   /**
    * Default constructor.

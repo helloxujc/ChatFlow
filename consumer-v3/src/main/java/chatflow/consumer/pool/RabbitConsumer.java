@@ -39,8 +39,8 @@ public class RabbitConsumer implements Runnable {
     try {
       channel.basicQos(prefetchCount);
       Map<String, Object> queueArgs = new HashMap<>();
-      queueArgs.put("x-message-ttl", 60_000);   // drop messages older than 60s
-      queueArgs.put("x-max-length", 10_000);     // max 10k messages per queue
+      queueArgs.put("x-message-ttl", 300_000);  // drop messages older than 5 min
+      queueArgs.put("x-max-length", 100_000);   // max 100k messages per queue
       channel.queueDeclare(queueName, true, false, false, queueArgs);
       channel.queueBind(queueName, exchange, "room." + roomId);
     } catch (IOException e) {

@@ -39,12 +39,12 @@ public final class ChatLoadClient {
    */
   public static void main(String[] args) throws Exception {
     String serverBase    = "ws://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com";
-    String metricsUrl    = "http://chatflow-alb-1246938090.us-west-2.elb.amazonaws.com:8080/metrics";
+    String metricsUrl    = "http://54.213.224.201:8080/metrics";
     String chatPrefix    = serverBase + "/chat/";
 
     URI probeUri = new URI(chatPrefix + "1");
 
-    int senderThreadsForMain = args.length > 0 ? Integer.parseInt(args[0]) : 4;
+    int senderThreadsForMain = args.length > 0 ? Integer.parseInt(args[0]) : ClientConfig.MAIN_SENDER_THREADS;
     int pipelineDepthPerConnection = 1;
 
     double avgRttMs = RttProbe.measureAverageRttMs(probeUri, 200);
@@ -119,7 +119,7 @@ public final class ChatLoadClient {
     metrics.start();
 
     senders.shutdown();
-    senders.awaitTermination(10, TimeUnit.MINUTES);
+    senders.awaitTermination(25, TimeUnit.MINUTES);
 
     metrics.stop();
 

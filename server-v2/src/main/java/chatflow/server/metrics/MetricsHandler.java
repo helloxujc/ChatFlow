@@ -72,6 +72,9 @@ public class MetricsHandler implements HttpHandler {
     analytics.put("topRooms",          repo.getTopRooms(TOP_N));
     root.put("analytics", analytics);
 
+    // Database performance stats
+    root.put("dbStats", repo.getDbStats());
+
     return root;
   }
 }

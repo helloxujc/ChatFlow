@@ -1,34 +1,36 @@
 # ChatFlow
 
-A scalable distributed real-time chat system built for CS6650. Supports 20 chat rooms with WebSocket connections, RabbitMQ message queuing, and a multi-server AWS deployment behind an Application Load Balancer.
+A scalable distributed real-time chat system built for CS6650. Supports 20 chat rooms with WebSocket connections, RabbitMQ message queuing, PostgreSQL persistence, and a multi-server AWS deployment behind an Application Load Balancer.
 
 ## Project Structure
 
 ```
 ChatFlow/
-├── server-v2/        # Chat server (WebSocket + RabbitMQ publisher + broadcast receiver)
-├── consumer/         # Message consumer (RabbitMQ → smart broadcast to servers with active room connections)
+├── server-v2/        # Chat server (WebSocket + RabbitMQ publisher + broadcast receiver + /metrics API)
+├── consumer-v3/      # Message consumer (RabbitMQ → broadcast → PostgreSQL batch write, circuit breaker)
 ├── client-part1/     # Basic load testing client (500K messages, throughput metrics)
-├── client-part2/     # Enhanced client (per-user connections, latency tracking, visualization)
+├── client-part2/     # Enhanced client (latency tracking, Little's Law, visualization)
+├── database/         # PostgreSQL schema (messages, user_room_activity) and setup scripts
 ├── deployment/       # ALB config, server/consumer startup scripts, systemd service
 ├── monitoring/       # Connection distribution, RabbitMQ stats, and health check scripts
+├── load-tests/       # Batch tuning results (T1–T5) and assignment 3 test outputs
 └── results/          # Test output: latency.csv, throughput.png
 ```
 
 ## Architecture
 
 ```
-Client (64–512 threads)
+Client (32 threads, SEND_DELAY_MS=15ms)
     ↓ ws:// port 80
 ALB (sticky session, 300s idle timeout)
-    ↓ HTTP:8081
-[Server1, Server2, Server3, Server4]  (port 8080 HTTP + 8081 WebSocket + 8082 broadcast)
+    ↓ WebSocket:8081
+[Server1, Server2, Server3, Server4]  (port 8080 HTTP/metrics + 8081 WebSocket + 8082 broadcast)
     ↓ AMQP — topic exchange: chat.exchange — routing key: room.{1..20}
-RabbitMQ (20 durable queues, TTL 60s, max 10k messages)
+RabbitMQ (20 durable queues, TTL 300s, max 100k messages per queue)
     ↓
-Consumer (20 threads + StripedExecutor + parallel broadcast)
-    ↓ HTTP POST /internal/broadcast
-[Server1, Server2, Server3, Server4]  → WebSocket clients
+Consumer-v3 (StripedExecutor + circuit breaker + write-behind batch)
+    ↓ HTTP POST /internal/broadcast        ↓ batch insert (size=1000, flush=100ms)
+[Server1..4] → WebSocket clients       PostgreSQL (messages + user_room_activity)
 ```
 
 See [deployment/architecture.md](deployment/architecture.md) for full architecture documentation.
@@ -59,7 +61,8 @@ cd deployment
 
 ```bash
 cd client-part2
-./gradlew run --args="128"   # 128 = sender thread count
+./gradlew jar
+java -jar build/libs/client-part2-1.0-SNAPSHOT.jar   # 32 sender threads (default)
 ```
 
 ### 4. Monitor during test
@@ -81,5 +84,6 @@ cd client-part2
 | Server 3 | 35.163.56.167 | 8080 (HTTP), 8081 (WS), 8082 (broadcast) |
 | Server 4 | 35.95.35.2 | 8080 (HTTP), 8081 (WS), 8082 (broadcast) |
 | RabbitMQ + Consumer | 54.218.236.208 | 5672 (AMQP), 15672 (Management UI) |
+| Database (PostgreSQL) | 35.91.237.64 | 5432 |
 | ALB | chatflow-alb-1246938090.us-west-2.elb.amazonaws.com | 80 |
 

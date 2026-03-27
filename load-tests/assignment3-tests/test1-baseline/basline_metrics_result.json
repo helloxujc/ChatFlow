@@ -1,0 +1,120 @@
+{
+  "coreQueries" : {
+    "room1_messages_last_hour" : 16025,
+    "useruser1_total_messages" : 0,
+    "active_users_last_hour" : 32,
+    "useruser1_rooms" : [ ]
+  },
+  "analytics" : {
+    "messagesPerMinute" : {
+      "19:28" : 7617,
+      "19:29" : 13461,
+      "19:30" : 13447,
+      "19:31" : 13448,
+      "19:32" : 13541,
+      "19:33" : 13612,
+      "19:34" : 13466,
+      "19:35" : 13487,
+      "19:36" : 13471,
+      "19:37" : 13476,
+      "19:38" : 13434,
+      "19:39" : 11657,
+      "19:42" : 55397,
+      "19:43" : 110963,
+      "19:44" : 111105,
+      "19:45" : 111245,
+      "19:46" : 110832,
+      "19:47" : 658
+    },
+    "topUsers" : [ {
+      "userId" : "1",
+      "username" : "user1",
+      "messageCount" : 54140
+    }, {
+      "userId" : "2",
+      "username" : "user2",
+      "messageCount" : 54128
+    }, {
+      "userId" : "3",
+      "username" : "user3",
+      "messageCount" : 54096
+    }, {
+      "userId" : "4",
+      "username" : "user4",
+      "messageCount" : 54053
+    }, {
+      "userId" : "13",
+      "username" : "user13",
+      "messageCount" : 15625
+    }, {
+      "userId" : "14",
+      "username" : "user14",
+      "messageCount" : 15625
+    }, {
+      "userId" : "10",
+      "username" : "user10",
+      "messageCount" : 15625
+    }, {
+      "userId" : "17",
+      "username" : "user17",
+      "messageCount" : 15625
+    }, {
+      "userId" : "12",
+      "username" : "user12",
+      "messageCount" : 15625
+    }, {
+      "userId" : "16",
+      "username" : "user16",
+      "messageCount" : 15625
+    } ],
+    "topRooms" : [ {
+      "roomId" : "10",
+      "messageCount" : 85390
+    }, {
+      "roomId" : "7",
+      "messageCount" : 85378
+    }, {
+      "roomId" : "20",
+      "messageCount" : 78125
+    }, {
+      "roomId" : "3",
+      "messageCount" : 46875
+    }, {
+      "roomId" : "8",
+      "messageCount" : 46875
+    }, {
+      "roomId" : "15",
+      "messageCount" : 46875
+    }, {
+      "roomId" : "17",
+      "messageCount" : 38471
+    }, {
+      "roomId" : "6",
+      "messageCount" : 38428
+    }, {
+      "roomId" : "12",
+      "messageCount" : 31250
+    }, {
+      "roomId" : "19",
+      "messageCount" : 31250
+    } ]
+  },
+  "dbStats" : {
+    "totalMessages" : 654317,
+    "testDurationSec" : 1115,
+    "avgWriteThroughputPerSec" : 586.4,
+    "bufferHitRatioPct" : 99.56,
+    "totalInsertsAllTime" : 8255317,
+    "xactCommit" : 2207884,
+    "xactRollback" : 3,
+    "currentLockWaits" : 0,
+    "messagesHeapBlksHit" : 18415649,
+    "messagesHeapBlksRead" : 576613,
+    "messagesIdxBlksHit" : 107313350,
+    "messagesIdxBlksRead" : 139279,
+    "diskBuffersCheckpoint" : 133154,
+    "diskBuffersClean" : 92502,
+    "diskBuffersBackend" : 265487,
+    "diskBuffersAlloc" : 263078
+  }
+}
